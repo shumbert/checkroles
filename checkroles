@@ -1,0 +1,106 @@
+#! /usr/bin/env python3
+
+import argparse
+from difflib import unified_diff
+from filecmp import dircmp
+import os
+import sys
+
+class NoRolesFound(Exception):
+    def __init__(self, dir):
+        self.dir = dir
+
+
+def build_lists(dcmp):
+    """  """
+    left_only = dcmp.left_only
+    right_only = dcmp.right_only
+    diff_files = dcmp.diff_files
+
+    for sub_dcmp in dcmp.subdirs.values():
+        sub_left_only, sub_right_only, sub_diff_files = build_lists(sub_dcmp)
+        left_only = left_only + sub_left_only
+        right_only = right_only + sub_right_only
+        diff_files = diff_files + sub_diff_files
+
+    return left_only, right_only, diff_files
+
+
+def check_arguments():
+    """ Parse command-line arguments """
+    parser = argparse.ArgumentParser(description='Compare Ansible roles')
+
+    parser.add_argument('dir1', help='first Ansible directory')
+    parser.add_argument('dir2', help='second Ansible directory')
+
+    return parser.parse_args()
+
+
+def check_directory(dir):
+    """ Check directory passed as arguments looks ok """
+    if os.path.basename(dir) != 'roles':
+        for name in os.listdir(dir):
+            if name == 'roles' and os.path.isdir(os.path.join(dir, name)):
+                return os.path.join(dir, name)
+        else:
+            raise NoRolesFound(dir)
+    else:
+        return dir
+
+
+def print_diff(path1, path2):
+    """ Print unified diff between two files """
+    with open(path1) as file1, open(path2) as file2:
+        contents1 = file1.readlines()
+        contents2 =file2.readlines()
+        sys.stdout.writelines(unified_diff(contents1, contents2, fromfile=path1, tofile=path2))
+
+
+def print_path(path):
+    """ Print path, with trailing '/' for directories """
+    if os.path.isdir(path):
+        print(path + '/')
+    else:
+        print(path)
+
+
+def main():
+    # Process and validate arguments
+    args = check_arguments()
+    try:
+        dir1 = check_directory(args.dir1)
+        dir2 = check_directory(args.dir2)
+    except IOError as e:
+        print(e.strerror + ': ' + e.filename)
+        sys.exit(1)
+    except NoRolesFound as e:
+        print(e.dir + ' does not contain Ansible roles')
+        sys.exit(1)
+
+    # Do the magic
+    dcmp = dircmp(dir1, dir2)
+    left_only, right_only, diff_files = build_lists(dcmp)
+
+    # Output differences
+    if left_only:
+        print("Files and directories only present in the first directory:")
+        for name in left_only:
+            print_path(os.path.join(dir1, name))
+        print()
+
+    if right_only:
+        print("Files and directories only present in the second directory:")
+        for name in right_only:
+            print_path(os.path.join(dir2, name))
+        print()
+
+    if diff_files:
+        print("Files whose contents differ:")
+        for name in diff_files:
+            print()
+            print_diff(os.path.join(dir1, name), os.path.join(dir2, name))
+            print()
+        print()
+
+if __name__ == '__main__':
+    main()
