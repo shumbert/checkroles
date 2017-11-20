@@ -11,17 +11,22 @@ class NoRolesFound(Exception):
         self.dir = dir
 
 
-def build_lists(dcmp):
-    """  """
-    left_only = dcmp.left_only
-    right_only = dcmp.right_only
-    diff_files = dcmp.diff_files
+def build_lists(dcmp, base_path1, base_path2, relative_path):
+    """ Recursively walk the dcmp objects tree """
+    left_only = [os.path.join(relative_path, name) for name in dcmp.left_only]
+    right_only = [os.path.join(relative_path, name) for name in dcmp.right_only]
+    diff_files = [os.path.join(relative_path, name) for name in dcmp.diff_files]
 
-    for sub_dcmp in dcmp.subdirs.values():
-        sub_left_only, sub_right_only, sub_diff_files = build_lists(sub_dcmp)
-        left_only = left_only + sub_left_only
-        right_only = right_only + sub_right_only
-        diff_files = diff_files + sub_diff_files
+    for sub_dir, sub_dcmp in dcmp.subdirs.items():
+        sub_dir = os.path.join(relative_path, sub_dir)
+
+        if (not os.path.islink(os.path.join(base_path1, sub_dir))
+                and not os.path.islink(os.path.join(base_path2, sub_dir))):
+            sub_left_only, sub_right_only, sub_diff_files = build_lists(sub_dcmp, base_path1, base_path2, sub_dir)
+
+            left_only = left_only + sub_left_only
+            right_only = right_only + sub_right_only
+            diff_files = diff_files + sub_diff_files
 
     return left_only, right_only, diff_files
 
@@ -79,23 +84,28 @@ def main():
 
     # Do the magic
     dcmp = dircmp(dir1, dir2)
-    left_only, right_only, diff_files = build_lists(dcmp)
+    left_only, right_only, diff_files = build_lists(dcmp, dir1, dir2, '')
 
     # Output differences
     if left_only:
         print("Files and directories only present in the first directory:")
+        print("==========================================================")
+        print()
         for name in left_only:
             print_path(os.path.join(dir1, name))
         print()
 
     if right_only:
         print("Files and directories only present in the second directory:")
+        print("===========================================================")
+        print()
         for name in right_only:
             print_path(os.path.join(dir2, name))
         print()
 
     if diff_files:
         print("Files whose contents differ:")
+        print("============================")
         for name in diff_files:
             print()
             print_diff(os.path.join(dir1, name), os.path.join(dir2, name))
